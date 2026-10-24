@@ -25,3 +25,10 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Archivos de asistentes de IA (Laravel Boost)
+.claude/
+CLAUDE.md
+AGENTS.md
+.mcp.json
+boost.json
