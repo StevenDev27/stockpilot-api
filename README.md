@@ -1,58 +1,113 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# StockPilot API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API REST de inventario hecha con **Laravel**, **Sanctum** y **PostgreSQL**. Gestiona categorías, productos y movimientos de stock con autenticación por token.
 
-## About Laravel
+## Qué incluye
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Autenticación con tokens (Laravel Sanctum) y límite de intentos en el login.
+- CRUD de categorías y productos con Form Requests y API Resources.
+- Filtros (categoría, búsqueda, stock bajo, rango de precio) y paginación.
+- Movimientos de stock con transacción y bloqueo de fila (`lockForUpdate`): una salida mayor al stock disponible se rechaza con 422.
+- Reporte de valorización del inventario por categoría.
+- Errores siempre en JSON (401, 404, 409, 422).
+- Pruebas automatizadas con Pest para cada endpoint.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Requisitos
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Docker y Docker Compose. Para correr sin Docker: PHP 8.3+, Composer y PostgreSQL.
 
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Inicio rápido
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone <url-del-repositorio>
+cd stockpilot-api
+docker compose up -d --build
+docker compose exec app php artisan db:seed   # opcional: datos de prueba
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+La API queda en `http://localhost:8000/api`. Usuario de prueba tras el seeder: `admin@stockpilot.test` / `password`.
 
-## Contributing
+## Sin Docker
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+# Ajusta DB_* en .env y crea la base de datos
+php artisan migrate --seed
+php artisan serve
+```
 
-## Code of Conduct
+## Pruebas
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Usan una base separada (`stockpilot_test`) para no tocar tus datos.
 
-## Security Vulnerabilities
+```bash
+docker compose exec app php artisan test
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Autenticación
 
-## License
+Envía el token en cada petición protegida:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```
+Authorization: Bearer <token>
+Accept: application/json
+```
+
+## Endpoints
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/register` | Crea un usuario y devuelve un token |
+| POST | `/api/login` | Devuelve un token (máx. 5 intentos por minuto) |
+| POST | `/api/logout` | Revoca el token actual |
+| GET | `/api/me` | Usuario autenticado |
+| GET, POST | `/api/categories` | Listar (paginado) y crear |
+| GET, PUT, DELETE | `/api/categories/{id}` | Ver, actualizar y eliminar (409 si tiene productos) |
+| GET, POST | `/api/products` | Listar con filtros y crear |
+| GET, PUT, DELETE | `/api/products/{id}` | Ver, actualizar y eliminar |
+| GET, POST | `/api/products/{id}/movements` | Historial y registro de movimientos |
+| GET | `/api/reports/stock-valuation` | Unidades y valor del stock por categoría |
+
+### Filtros de `GET /api/products`
+
+`category_id`, `search` (nombre o SKU), `low_stock=1`, `min_price`, `max_price`, `per_page` (1 a 100) y `page`.
+
+### Filtros de `GET /api/products/{id}/movements`
+
+`type` (`in` o `out`), `from`, `to` (fechas) y `per_page`.
+
+### Ejemplo
+
+```bash
+curl -X POST http://localhost:8000/api/products/1/movements \
+  -H "Authorization: Bearer <token>" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "out", "quantity": 3, "reason": "Venta"}'
+```
+
+## Formato de errores
+
+| Código | Cuándo |
+|---|---|
+| 401 | Falta el token o es inválido |
+| 404 | El recurso no existe |
+| 409 | Conflicto, por ejemplo borrar una categoría con productos |
+| 422 | Validación fallida o stock insuficiente |
+
+```json
+{
+  "message": "Stock insuficiente: disponible 3, solicitado 4.",
+  "errors": { "quantity": ["Stock insuficiente: disponible 3, solicitado 4."] }
+}
+```
+
+## Decisiones de diseño
+
+- **El stock solo cambia mediante movimientos.** `PUT /products/{id}` ignora `stock`, así el historial siempre cuadra con el stock real.
+- **Transacción y `lockForUpdate`** en `StockService`: evita que dos salidas simultáneas dejen el stock negativo.
+- **`unsignedInteger` en `stock`**: la base de datos también impide valores negativos.
+- **`restrictOnDelete` en categorías**: no se pueden dejar productos huérfanos.
+- **Búsqueda con `ilike`**, propia de PostgreSQL, sin distinguir mayúsculas.
